@@ -1,7 +1,7 @@
 # Show HN: OntoPrune – Neuro-Symbolic Context Pruning for Local SLMs and Coding Agents
 
 **URL:** https://github.com/vigmarcarlo/OntoPrune
-**Title:** Show HN: OntoPrune – Neuro-symbolic context pruner cutting 85% tokens and 6.7x TTFT on CPU
+**Title:** Show HN: OntoPrune – Pruning 85% LLM context tokens and 6.7x TTFT on CPU
 
 Hi HN!
 

@@ -4,18 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ontoprune"
-version = "0.1.0-alpha"
+version = "0.1.0"
 description = "Neuro-Symbolic Context Pruning Middleware for Local SLMs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "OntoPrune Contributors" }
+    { name = "Carlos Vigmar", email = "vigmarcarlo@gmail.com" }
 ]
 dependencies = [
     "mcp>=1.0.0",
     "rdflib>=7.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/vigmarcarlo/OntoPrune"
+Repository = "https://github.com/vigmarcarlo/OntoPrune"
+Issues = "https://github.com/vigmarcarlo/OntoPrune/issues"
 
 [project.optional-dependencies]
 dev = [
