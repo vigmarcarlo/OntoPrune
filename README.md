@@ -4,6 +4,8 @@
 
 OntoPrune es un middleware traductor ligero que transforma código fuente en contratos de contexto mínimos utilizando representación ontológica (RDF/SPARQL), reduciendo drásticamente los tokens de entrada y la latencia TTFT (Time to First Token) para modelos de lenguaje pequeños (SLMs) y evitando alucinaciones de API.
 
+> 💡 **Filosofía y Arquitectura:** Consulta [Batear Largo: Por qué la Ontología es el Cerebro de OntoPrune](docs/ONTOLOGY_FOUNDATIONS.md) para entender los 5 pilares de fondo de la arquitectura neuro-simbólica.
+
 ---
 
 ## Resultados Empíricos (Benchmark en CPU)
