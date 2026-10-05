@@ -1,0 +1,10 @@
+name: shop_app
+description: Realistic Flutter e-commerce project fixture for OntoPrune.
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter

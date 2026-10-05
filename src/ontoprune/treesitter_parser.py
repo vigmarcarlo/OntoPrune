@@ -72,11 +72,97 @@ class DartParser(TreeSitterParserEngine):
     def __init__(self) -> None:
         super().__init__("dart")
 
+    def extract_imports(self, source_code: str) -> list[str]:
+        """Extract import URIs from Dart source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        uris: list[str] = []
+        for node in tree.root_node.children:
+            if node.type == "import_or_export":
+                for c in node.children:
+                    if c.type == "library_import":
+                        for spec in c.children:
+                            if spec.type == "import_specification":
+                                for curi in spec.children:
+                                    if curi.type == "configurable_uri":
+                                        raw = curi.text.decode("utf-8").strip("\"'")
+                                        uris.append(raw)
+        return uris
+
+    def collect_symbols(
+        self, source_code: str
+    ) -> tuple[set[str], dict[str, set[str]], dict[str, dict[str, str]]]:
+        """Collect classes, methods, and field types from Dart source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        classes: set[str] = set()
+        class_methods: dict[str, set[str]] = {}
+        class_fields: dict[str, dict[str, str]] = {}
+
+        for node in tree.root_node.children:
+            if node.type == "class_definition":
+                cls_name = None
+                for child in node.children:
+                    if child.type == "identifier":
+                        cls_name = child.text.decode("utf-8")
+                        break
+                if not cls_name:
+                    continue
+
+                classes.add(cls_name)
+                class_methods[cls_name] = set()
+                class_fields[cls_name] = {}
+
+                body = None
+                for child in node.children:
+                    if child.type == "class_body":
+                        body = child
+                        break
+                if not body:
+                    continue
+
+                for member in body.children:
+                    if member.type == "declaration":
+                        type_str = None
+                        field_name = None
+                        for c in member.children:
+                            if c.type in ("type_identifier", "identifier"):
+                                if type_str is None and c.text.decode("utf-8") not in (
+                                    "final",
+                                    "var",
+                                    "const",
+                                ):
+                                    type_str = c.text.decode("utf-8")
+                            elif c.type == "initialized_identifier_list":
+                                for id_node in c.children:
+                                    if id_node.type in ("initialized_identifier", "identifier"):
+                                        field_name = (
+                                            id_node.text.decode("utf-8").split("=")[0].strip()
+                                        )
+                            elif c.type == "function_signature":
+                                for fc in c.children:
+                                    if fc.type == "identifier":
+                                        class_methods[cls_name].add(fc.text.decode("utf-8"))
+                        if field_name and type_str:
+                            class_fields[cls_name][field_name] = type_str
+
+                    elif member.type == "method_signature":
+                        for sig_child in member.children:
+                            if sig_child.type in ("function_signature", "getter_signature"):
+                                for fc in sig_child.children:
+                                    if fc.type == "identifier":
+                                        class_methods[cls_name].add(fc.text.decode("utf-8"))
+
+        return classes, class_methods, class_fields
+
     def parse(
         self,
         source_code: str,
         module_name: str = "main",
         include_bodies: bool = False,
+        global_classes: set[str] | None = None,
+        global_class_methods: dict[str, set[str]] | None = None,
+        global_class_fields: dict[str, dict[str, str]] | None = None,
     ) -> rdflib.Graph:
         code_bytes = source_code.encode("utf-8")
         tree = self.parser.parse(code_bytes)
@@ -173,57 +259,89 @@ class DartParser(TreeSitterParserEngine):
                 idx = 0
                 while idx < len(body.children):
                     member = body.children[idx]
+                    method_name = None
+                    ret_type = "void"
+                    params: list[tuple[str, str | None]] = []
+                    body_node = None
+
+                    def _extract_param(p_node: Any) -> tuple[str | None, str | None]:
+                        pt = None
+                        pn = None
+                        for pc in p_node.children:
+                            if pc.type in ("type_identifier", "identifier"):
+                                if pt is None:
+                                    pt = pc.text.decode("utf-8")
+                                else:
+                                    pn = pc.text.decode("utf-8")
+                        if pn is None and pt:
+                            pn = pt
+                            pt = None
+                        return pt, pn
+
+                    def _extract_sig(
+                        sig_node: Any,
+                    ) -> tuple[str | None, str, list[tuple[str, str | None]]]:
+                        m_name = None
+                        r_type = "void"
+                        p_list: list[tuple[str, str | None]] = []
+                        for fc in sig_node.children:
+                            if fc.type == "type_identifier":
+                                r_type = fc.text.decode("utf-8")
+                            elif fc.type == "type_arguments":
+                                r_type += fc.text.decode("utf-8")
+                            elif fc.type == "identifier":
+                                m_name = fc.text.decode("utf-8")
+                            elif fc.type == "getter_signature":
+                                for gc in fc.children:
+                                    if gc.type == "type_identifier":
+                                        r_type = gc.text.decode("utf-8")
+                                    elif gc.type == "identifier":
+                                        m_name = gc.text.decode("utf-8")
+                            elif fc.type == "formal_parameter_list":
+                                for p in fc.children:
+                                    if p.type == "formal_parameter":
+                                        pt, pn = _extract_param(p)
+                                        if pn:
+                                            p_list.append((pn, pt))
+                                    elif p.type == "optional_formal_parameters":
+                                        for op in p.children:
+                                            if op.type == "formal_parameter":
+                                                pt, pn = _extract_param(op)
+                                                if pn:
+                                                    p_list.append((pn, pt))
+                        return m_name, r_type, p_list
+
                     if member.type == "method_signature":
-                        method_name = None
-                        ret_type = "void"
-                        params: list[tuple[str, str | None]] = []
-
-                        # Inspect signature
                         for sig_child in member.children:
-                            if sig_child.type == "function_signature":
-                                for fc in sig_child.children:
-                                    if fc.type == "type_identifier":
-                                        ret_type = fc.text.decode("utf-8")
-                                    elif fc.type == "type_arguments":
-                                        ret_type += fc.text.decode("utf-8")
-                                    elif fc.type == "identifier":
-                                        method_name = fc.text.decode("utf-8")
-                                    elif fc.type == "formal_parameter_list":
-                                        for p in fc.children:
-                                            if p.type == "formal_parameter":
-                                                p_type = None
-                                                p_name = None
-                                                for pc in p.children:
-                                                    if pc.type in ("type_identifier", "identifier"):
-                                                        if p_type is None:
-                                                            p_type = pc.text.decode("utf-8")
-                                                        else:
-                                                            p_name = pc.text.decode("utf-8")
-                                                if p_name:
-                                                    params.append((p_name, p_type))
+                            if sig_child.type in ("function_signature", "getter_signature"):
+                                method_name, ret_type, params = _extract_sig(
+                                    sig_child if sig_child.type == "function_signature" else member
+                                )
 
-                        # Look ahead for function_body
-                        body_node = None
                         if (
                             idx + 1 < len(body.children)
                             and body.children[idx + 1].type == "function_body"
                         ):
                             body_node = body.children[idx + 1]
 
-                        if method_name:
-                            class_methods[cls_name].add(method_name)
-                            methods_meta.append(
-                                {
-                                    "class": cls_name,
-                                    "name": method_name,
-                                    "return_type": ret_type,
-                                    "params": params,
-                                    "body_node": body_node,
-                                    "source_code": body_node.text.decode("utf-8")
-                                    if body_node
-                                    else "",
-                                }
-                            )
+                    elif member.type == "declaration":
+                        for sig_child in member.children:
+                            if sig_child.type == "function_signature":
+                                method_name, ret_type, params = _extract_sig(sig_child)
+
+                    if method_name:
+                        class_methods[cls_name].add(method_name)
+                        methods_meta.append(
+                            {
+                                "class": cls_name,
+                                "name": method_name,
+                                "return_type": ret_type,
+                                "params": params,
+                                "body_node": body_node,
+                                "source_code": body_node.text.decode("utf-8") if body_node else "",
+                            }
+                        )
+
                     idx += 1
 
         # Build RDF Graph for all methods and resolve invocations
@@ -258,9 +376,17 @@ class DartParser(TreeSitterParserEngine):
             # Invocations inside body
             body_node = meta["body_node"]
             if body_node:
-                invocations = self._extract_dart_calls(
-                    body_node, cls_name, class_fields, class_methods
-                )
+                eff_fields = dict(class_fields)
+                if global_class_fields:
+                    for gc, gf in global_class_fields.items():
+                        eff_fields.setdefault(gc, {}).update(gf)
+
+                eff_methods = dict(class_methods)
+                if global_class_methods:
+                    for gc, gm in global_class_methods.items():
+                        eff_methods.setdefault(gc, set()).update(gm)
+
+                invocations = self._extract_dart_calls(body_node, cls_name, eff_fields, eff_methods)
                 for invoked_cls, invoked_method in invocations:
                     target_func_uri = REPO[
                         f"func_{sanitize_id(invoked_cls)}.{sanitize_id(invoked_method)}"
@@ -304,6 +430,8 @@ class DartParser(TreeSitterParserEngine):
                         target_cls = None
                         if obj_name:
                             target_cls = class_fields.get(current_cls, {}).get(obj_name)
+                            if not target_cls and obj_name in class_methods:
+                                target_cls = obj_name
 
                         if not target_cls:
                             # Check if unique method across all classes
@@ -332,11 +460,83 @@ class JavaParser(TreeSitterParserEngine):
     def __init__(self) -> None:
         super().__init__("java")
 
+    def extract_imports(self, source_code: str) -> list[str]:
+        """Extract import paths from Java source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        imports: list[str] = []
+        for node in tree.root_node.children:
+            if node.type == "import_declaration":
+                imp_str = ""
+                for c in node.children:
+                    if c.type in ("scoped_identifier", "identifier"):
+                        imp_str = c.text.decode("utf-8")
+                    elif c.type == "asterisk":
+                        imp_str += ".*"
+                if imp_str:
+                    imports.append(imp_str)
+        return imports
+
+    def collect_symbols(
+        self, source_code: str
+    ) -> tuple[set[str], dict[str, set[str]], dict[str, dict[str, str]]]:
+        """Collect classes, methods, and field types from Java source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        classes: set[str] = set()
+        class_methods: dict[str, set[str]] = {}
+        class_fields: dict[str, dict[str, str]] = {}
+
+        for node in tree.root_node.children:
+            if node.type in ("class_declaration", "interface_declaration", "record_declaration"):
+                cls_name = None
+                for child in node.children:
+                    if child.type == "identifier":
+                        cls_name = child.text.decode("utf-8")
+                        break
+                if not cls_name:
+                    continue
+
+                classes.add(cls_name)
+                class_methods[cls_name] = set()
+                class_fields[cls_name] = {}
+
+                body = None
+                for child in node.children:
+                    if child.type in ("class_body", "interface_body"):
+                        body = child
+                        break
+                if not body:
+                    continue
+
+                for member in body.children:
+                    if member.type == "field_declaration":
+                        type_str = None
+                        field_name = None
+                        for c in member.children:
+                            if c.type in ("type_identifier", "generic_type"):
+                                type_str = c.text.decode("utf-8")
+                            elif c.type == "variable_declarator":
+                                for vc in c.children:
+                                    if vc.type == "identifier":
+                                        field_name = vc.text.decode("utf-8")
+                        if field_name and type_str:
+                            class_fields[cls_name][field_name] = type_str
+                    elif member.type == "method_declaration":
+                        for c in member.children:
+                            if c.type == "identifier":
+                                class_methods[cls_name].add(c.text.decode("utf-8"))
+
+        return classes, class_methods, class_fields
+
     def parse(
         self,
         source_code: str,
         module_name: str = "main",
         include_bodies: bool = False,
+        global_classes: set[str] | None = None,
+        global_class_methods: dict[str, set[str]] | None = None,
+        global_class_fields: dict[str, dict[str, str]] | None = None,
     ) -> rdflib.Graph:
         code_bytes = source_code.encode("utf-8")
         tree = self.parser.parse(code_bytes)
@@ -498,9 +698,17 @@ class JavaParser(TreeSitterParserEngine):
 
             body_node = meta["body_node"]
             if body_node:
-                invocations = self._extract_java_calls(
-                    body_node, cls_name, class_fields, class_methods
-                )
+                eff_fields = dict(class_fields)
+                if global_class_fields:
+                    for gc, gf in global_class_fields.items():
+                        eff_fields.setdefault(gc, {}).update(gf)
+
+                eff_methods = dict(class_methods)
+                if global_class_methods:
+                    for gc, gm in global_class_methods.items():
+                        eff_methods.setdefault(gc, set()).update(gm)
+
+                invocations = self._extract_java_calls(body_node, cls_name, eff_fields, eff_methods)
                 for invoked_cls, invoked_method in invocations:
                     target_func_uri = REPO[
                         f"func_{sanitize_id(invoked_cls)}.{sanitize_id(invoked_method)}"
@@ -523,22 +731,44 @@ class JavaParser(TreeSitterParserEngine):
             if n.type == "method_invocation":
                 obj_name = None
                 method_name = None
+                has_this = False
+
                 for c in n.children:
-                    if c.type == "identifier":
+                    if c.type == "this":
+                        has_this = True
+                    elif c.type == "identifier":
                         if obj_name is None:
                             obj_name = c.text.decode("utf-8")
                         else:
                             method_name = c.text.decode("utf-8")
 
-                if obj_name and method_name:
+                if has_this and obj_name:
+                    # this.method()
+                    calls.add((current_cls, obj_name))
+                elif obj_name and method_name:
+                    # obj.method()
                     target_cls = class_fields.get(current_cls, {}).get(obj_name)
                     if not target_cls:
-                        matching = [c for c, m in class_methods.items() if method_name in m]
-                        if len(matching) == 1:
-                            target_cls = matching[0]
+                        if obj_name in class_methods:
+                            target_cls = obj_name
+                        else:
+                            matching = [c for c, m in class_methods.items() if method_name in m]
+                            if len(matching) == 1:
+                                target_cls = matching[0]
 
                     if target_cls:
                         calls.add((target_cls, method_name))
+                elif obj_name and not method_name:
+                    # direct method() call
+                    target_cls = (
+                        current_cls if obj_name in class_methods.get(current_cls, set()) else None
+                    )
+                    if not target_cls:
+                        matching = [c for c, m in class_methods.items() if obj_name in m]
+                        if len(matching) == 1:
+                            target_cls = matching[0]
+                    if target_cls:
+                        calls.add((target_cls, obj_name))
 
             for child in n.children:
                 visit(child)
@@ -558,11 +788,106 @@ class TypeScriptParser(TreeSitterParserEngine):
     def __init__(self, is_tsx: bool = False) -> None:
         super().__init__("tsx" if is_tsx else "typescript")
 
+    def extract_imports(self, source_code: str) -> list[str]:
+        """Extract import URIs from TypeScript/JavaScript source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        uris: list[str] = []
+        for node in tree.root_node.children:
+            if node.type == "import_statement":
+                for c in node.children:
+                    if c.type == "string":
+                        raw = c.text.decode("utf-8").strip("\"'")
+                        uris.append(raw)
+        return uris
+
+    def collect_symbols(
+        self, source_code: str
+    ) -> tuple[set[str], dict[str, set[str]], dict[str, dict[str, str]]]:
+        """Collect classes, interfaces, methods, and field types from TypeScript/JavaScript source code."""
+        code_bytes = source_code.encode("utf-8")
+        tree = self.parser.parse(code_bytes)
+        classes: set[str] = set()
+        class_methods: dict[str, set[str]] = {}
+        class_fields: dict[str, dict[str, str]] = {}
+
+        def find_symbols(node: Any) -> None:
+            for child in node.children:
+                if child.type in ("class_declaration", "interface_declaration"):
+                    name = None
+                    for c in child.children:
+                        if c.type in ("type_identifier", "identifier"):
+                            name = c.text.decode("utf-8")
+                            break
+                    if name:
+                        classes.add(name)
+                        class_methods[name] = set()
+                        class_fields[name] = {}
+                        body = child.child_by_field_name("body")
+                        if body:
+                            for member in body.children:
+                                if member.type == "method_signature":
+                                    for mc in member.children:
+                                        if mc.type == "property_identifier":
+                                            class_methods[name].add(mc.text.decode("utf-8"))
+                                elif member.type == "method_definition":
+                                    m_name = None
+                                    for mc in member.children:
+                                        if mc.type == "property_identifier":
+                                            m_name = mc.text.decode("utf-8")
+                                            if m_name != "constructor":
+                                                class_methods[name].add(m_name)
+                                        elif (
+                                            mc.type == "formal_parameters"
+                                            and m_name == "constructor"
+                                        ):
+                                            for p in mc.children:
+                                                if p.type in (
+                                                    "required_parameter",
+                                                    "optional_parameter",
+                                                ):
+                                                    f_name, f_type, has_mod = None, None, False
+                                                    for pc in p.children:
+                                                        if pc.type == "accessibility_modifier":
+                                                            has_mod = True
+                                                        elif pc.type == "identifier":
+                                                            f_name = pc.text.decode("utf-8")
+                                                        elif pc.type == "type_annotation":
+                                                            f_type = (
+                                                                pc.text.decode("utf-8")
+                                                                .lstrip(":")
+                                                                .strip()
+                                                            )
+                                                    if f_name and f_type and has_mod:
+                                                        class_fields[name][f_name] = f_type
+                                elif member.type in (
+                                    "public_field_definition",
+                                    "property_definition",
+                                    "field_definition",
+                                ):
+                                    f_name = None
+                                    f_type = None
+                                    for mc in member.children:
+                                        if mc.type == "property_identifier":
+                                            f_name = mc.text.decode("utf-8")
+                                        elif mc.type == "type_annotation":
+                                            f_type = mc.text.decode("utf-8").lstrip(":").strip()
+                                    if f_name and f_type:
+                                        class_fields[name][f_name] = f_type
+                elif child.type == "export_statement":
+                    find_symbols(child)
+
+        find_symbols(tree.root_node)
+        return classes, class_methods, class_fields
+
     def parse(
         self,
         source_code: str,
         module_name: str = "main",
         include_bodies: bool = False,
+        global_classes: set[str] | None = None,
+        global_class_methods: dict[str, set[str]] | None = None,
+        global_class_fields: dict[str, dict[str, str]] | None = None,
     ) -> rdflib.Graph:
         code_bytes = source_code.encode("utf-8")
         tree = self.parser.parse(code_bytes)
@@ -584,7 +909,7 @@ class TypeScriptParser(TreeSitterParserEngine):
 
         def find_classes(node: Any) -> None:
             for child in node.children:
-                if child.type == "class_declaration":
+                if child.type in ("class_declaration", "interface_declaration"):
                     cls_name = None
                     for c in child.children:
                         if c.type in ("type_identifier", "identifier"):
@@ -612,6 +937,34 @@ class TypeScriptParser(TreeSitterParserEngine):
                                             f_type = mc.text.decode("utf-8").lstrip(":").strip()
                                     if f_name and f_type:
                                         class_fields[cls_name][f_name] = f_type
+                                elif member.type == "method_definition":
+                                    m_name = None
+                                    for mc in member.children:
+                                        if mc.type == "property_identifier":
+                                            m_name = mc.text.decode("utf-8")
+                                        elif (
+                                            mc.type == "formal_parameters"
+                                            and m_name == "constructor"
+                                        ):
+                                            for p in mc.children:
+                                                if p.type in (
+                                                    "required_parameter",
+                                                    "optional_parameter",
+                                                ):
+                                                    p_f_name, p_f_type, has_mod = None, None, False
+                                                    for pc in p.children:
+                                                        if pc.type == "accessibility_modifier":
+                                                            has_mod = True
+                                                        elif pc.type == "identifier":
+                                                            p_f_name = pc.text.decode("utf-8")
+                                                        elif pc.type == "type_annotation":
+                                                            p_f_type = (
+                                                                pc.text.decode("utf-8")
+                                                                .lstrip(":")
+                                                                .strip()
+                                                            )
+                                                    if p_f_name and p_f_type and has_mod:
+                                                        class_fields[cls_name][p_f_name] = p_f_type
                 elif child.type == "export_statement":
                     find_classes(child)
 
@@ -619,7 +972,7 @@ class TypeScriptParser(TreeSitterParserEngine):
 
         def extract_methods(node: Any) -> None:
             for child in node.children:
-                if child.type == "class_declaration":
+                if child.type in ("class_declaration", "interface_declaration"):
                     cls_name = None
                     for c in child.children:
                         if c.type in ("type_identifier", "identifier"):
@@ -638,7 +991,7 @@ class TypeScriptParser(TreeSitterParserEngine):
                         continue
 
                     for member in body.children:
-                        if member.type == "method_definition":
+                        if member.type in ("method_definition", "method_signature"):
                             method_name = None
                             ret_type = "void"
                             params: list[tuple[str, str | None]] = []
@@ -666,7 +1019,7 @@ class TypeScriptParser(TreeSitterParserEngine):
                                 elif mc.type == "statement_block":
                                     body_node = mc
 
-                            if method_name:
+                            if method_name and method_name != "constructor":
                                 class_methods[cls_name].add(method_name)
                                 methods_meta.append(
                                     {
@@ -713,9 +1066,17 @@ class TypeScriptParser(TreeSitterParserEngine):
 
             body_node = meta["body_node"]
             if body_node:
-                invocations = self._extract_ts_calls(
-                    body_node, cls_name, class_fields, class_methods
-                )
+                eff_fields = dict(class_fields)
+                if global_class_fields:
+                    for gc, gf in global_class_fields.items():
+                        eff_fields.setdefault(gc, {}).update(gf)
+
+                eff_methods = dict(class_methods)
+                if global_class_methods:
+                    for gc, gm in global_class_methods.items():
+                        eff_methods.setdefault(gc, set()).update(gm)
+
+                invocations = self._extract_ts_calls(body_node, cls_name, eff_fields, eff_methods)
                 for invoked_cls, invoked_method in invocations:
                     target_func_uri = REPO[
                         f"func_{sanitize_id(invoked_cls)}.{sanitize_id(invoked_method)}"
@@ -738,7 +1099,6 @@ class TypeScriptParser(TreeSitterParserEngine):
             if n.type == "call_expression":
                 fn_node = n.child_by_field_name("function")
                 if fn_node and fn_node.type == "member_expression":
-                    # this.inventory.reservarStock(...) or inventory.reservarStock(...)
                     prop = fn_node.child_by_field_name("property")
                     obj = fn_node.child_by_field_name("object")
                     if prop:
@@ -747,10 +1107,11 @@ class TypeScriptParser(TreeSitterParserEngine):
 
                         if obj:
                             obj_text = obj.text.decode("utf-8")
-                            # this.inventory -> extract inventory
                             if obj_text.startswith("this."):
                                 obj_text = obj_text[5:]
                             target_cls = class_fields.get(current_cls, {}).get(obj_text)
+                            if not target_cls and obj_text in class_methods:
+                                target_cls = obj_text
 
                         if not target_cls:
                             matching = [c for c, m in class_methods.items() if method_name in m]
@@ -759,6 +1120,11 @@ class TypeScriptParser(TreeSitterParserEngine):
 
                         if target_cls:
                             calls.add((target_cls, method_name))
+                elif fn_node and fn_node.type == "identifier":
+                    fn_name = fn_node.text.decode("utf-8")
+                    matching = [c for c, m in class_methods.items() if fn_name in m]
+                    if len(matching) == 1:
+                        calls.add((matching[0], fn_name))
 
             for child in n.children:
                 visit(child)

@@ -77,6 +77,13 @@ class ProjectGraph:
         if not self.project_root:
             self.project_root = find_project_root(entry_path)
 
+        if entry_path.suffix.lower() == ".dart":
+            return self._parse_dart_project_for_file(entry_path, max_depth)
+        elif entry_path.suffix.lower() == ".java":
+            return self._parse_java_project_for_file(entry_path, max_depth)
+        elif entry_path.suffix.lower() in (".ts", ".tsx", ".js", ".jsx"):
+            return self._parse_ts_project_for_file(entry_path, max_depth)
+
         resolver = ImportResolver(self.project_root)
 
         # Queue of files to parse: (file_path, current_depth)
@@ -143,6 +150,193 @@ class ProjectGraph:
 
             # Merge into master graph
             for triple in visitor.graph:
+                self.graph.add(triple)
+
+        return self.graph
+
+    def _parse_dart_project_for_file(
+        self,
+        entry_path: Path,
+        max_depth: int = 3,
+    ) -> rdflib.Graph:
+        """Recursively parses Dart/Flutter project dependencies using Tree-Sitter."""
+        from ontoprune.treesitter_parser import DartParser
+
+        parser = DartParser()
+        resolver = ImportResolver(self.project_root)
+
+        queue: list[tuple[Path, int]] = [(entry_path, 0)]
+        collected_sources: dict[Path, str] = {}
+        all_classes: set[str] = set()
+        all_methods: dict[str, set[str]] = {}
+        all_fields: dict[str, dict[str, str]] = {}
+
+        # Pass 1: Discover connected Dart files and collect symbols
+        while queue:
+            file_path, depth = queue.pop(0)
+            if file_path in self.visited_files:
+                continue
+            if not file_path.exists() or not file_path.is_file():
+                continue
+
+            self.visited_files.add(file_path)
+            source_code = file_path.read_text(encoding="utf-8")
+            collected_sources[file_path] = source_code
+
+            # Collect symbols
+            cls_set, m_dict, f_dict = parser.collect_symbols(source_code)
+            all_classes.update(cls_set)
+            for c, m in m_dict.items():
+                all_methods.setdefault(c, set()).update(m)
+            for c, f in f_dict.items():
+                all_fields.setdefault(c, {}).update(f)
+
+            if depth < max_depth:
+                imports = parser.extract_imports(source_code)
+                for imp_uri in imports:
+                    resolved = resolver.resolve_dart_import(file_path, imp_uri)
+                    if resolved and resolved not in self.visited_files:
+                        queue.append((resolved, depth + 1))
+
+        # Pass 2: Parse each Dart file with full cross-file symbol knowledge
+        for file_path, src in collected_sources.items():
+            mod_name = get_module_name(file_path, self.project_root)
+            file_graph = parser.parse(
+                source_code=src,
+                module_name=mod_name,
+                include_bodies=False,
+                global_classes=all_classes,
+                global_class_methods=all_methods,
+                global_class_fields=all_fields,
+            )
+            for triple in file_graph:
+                self.graph.add(triple)
+
+        return self.graph
+
+    def _parse_java_project_for_file(
+        self,
+        entry_path: Path,
+        max_depth: int = 3,
+    ) -> rdflib.Graph:
+        """Recursively parses Java project dependencies using Tree-Sitter."""
+        from ontoprune.treesitter_parser import JavaParser
+
+        parser = JavaParser()
+        resolver = ImportResolver(self.project_root)
+
+        queue: list[tuple[Path, int]] = [(entry_path, 0)]
+        collected_sources: dict[Path, str] = {}
+        all_classes: set[str] = set()
+        all_methods: dict[str, set[str]] = {}
+        all_fields: dict[str, dict[str, str]] = {}
+
+        # Pass 1: Discover connected Java files and collect symbols
+        while queue:
+            file_path, depth = queue.pop(0)
+            if file_path in self.visited_files:
+                continue
+            if not file_path.exists() or not file_path.is_file():
+                continue
+
+            self.visited_files.add(file_path)
+            source_code = file_path.read_text(encoding="utf-8")
+            collected_sources[file_path] = source_code
+
+            # Collect symbols
+            cls_set, m_dict, f_dict = parser.collect_symbols(source_code)
+            all_classes.update(cls_set)
+            for c, m in m_dict.items():
+                all_methods.setdefault(c, set()).update(m)
+            for c, f in f_dict.items():
+                all_fields.setdefault(c, {}).update(f)
+
+            if depth < max_depth:
+                imports = parser.extract_imports(source_code)
+                for imp_name in imports:
+                    resolved_list = resolver.resolve_java_import(file_path, imp_name)
+                    for resolved in resolved_list:
+                        if resolved not in self.visited_files:
+                            queue.append((resolved, depth + 1))
+
+                # Also inspect package siblings in same directory
+                for sibling in file_path.parent.glob("*.java"):
+                    if sibling not in self.visited_files and sibling.is_file():
+                        queue.append((sibling, depth + 1))
+
+        # Pass 2: Parse each Java file with full cross-file symbol knowledge
+        for file_path, src in collected_sources.items():
+            mod_name = get_module_name(file_path, self.project_root)
+            file_graph = parser.parse(
+                source_code=src,
+                module_name=mod_name,
+                include_bodies=False,
+                global_classes=all_classes,
+                global_class_methods=all_methods,
+                global_class_fields=all_fields,
+            )
+            for triple in file_graph:
+                self.graph.add(triple)
+
+        return self.graph
+
+    def _parse_ts_project_for_file(
+        self,
+        entry_path: Path,
+        max_depth: int = 3,
+    ) -> rdflib.Graph:
+        """Recursively parses TypeScript/JavaScript project dependencies using Tree-Sitter."""
+        from ontoprune.treesitter_parser import TypeScriptParser
+
+        resolver = ImportResolver(self.project_root)
+
+        queue: list[tuple[Path, int]] = [(entry_path, 0)]
+        collected_sources: dict[Path, tuple[str, bool]] = {}
+        all_classes: set[str] = set()
+        all_methods: dict[str, set[str]] = {}
+        all_fields: dict[str, dict[str, str]] = {}
+
+        # Pass 1: Discover connected TypeScript/JavaScript files and collect symbols
+        while queue:
+            file_path, depth = queue.pop(0)
+            if file_path in self.visited_files:
+                continue
+            if not file_path.exists() or not file_path.is_file():
+                continue
+
+            self.visited_files.add(file_path)
+            source_code = file_path.read_text(encoding="utf-8")
+            is_tsx = file_path.suffix.lower() in (".tsx", ".jsx")
+            collected_sources[file_path] = (source_code, is_tsx)
+
+            parser = TypeScriptParser(is_tsx=is_tsx)
+            cls_set, m_dict, f_dict = parser.collect_symbols(source_code)
+            all_classes.update(cls_set)
+            for c, m in m_dict.items():
+                all_methods.setdefault(c, set()).update(m)
+            for c, f in f_dict.items():
+                all_fields.setdefault(c, {}).update(f)
+
+            if depth < max_depth:
+                imports = parser.extract_imports(source_code)
+                for imp_uri in imports:
+                    resolved = resolver.resolve_ts_import(file_path, imp_uri)
+                    if resolved and resolved not in self.visited_files:
+                        queue.append((resolved, depth + 1))
+
+        # Pass 2: Parse each file with full cross-file symbol knowledge
+        for file_path, (src, is_tsx) in collected_sources.items():
+            mod_name = get_module_name(file_path, self.project_root)
+            parser = TypeScriptParser(is_tsx=is_tsx)
+            file_graph = parser.parse(
+                source_code=src,
+                module_name=mod_name,
+                include_bodies=False,
+                global_classes=all_classes,
+                global_class_methods=all_methods,
+                global_class_fields=all_fields,
+            )
+            for triple in file_graph:
                 self.graph.add(triple)
 
         return self.graph

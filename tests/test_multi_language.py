@@ -108,3 +108,26 @@ def test_typescript_translate_e2e() -> None:
     assert "export interface InventoryService" in output
     assert "procesarOrden" in output
     assert "reservarStock" in output
+
+
+def test_real_flutter_checkout_e2e() -> None:
+    """Verify complex real Flutter architecture: abstract repos, ChangeNotifier, and widget trees."""
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "real_flutter_checkout.dart"
+
+    # 1. Target controller business method
+    controller_contract = ontoprune.translate(fixture_path, "executeCheckout", fmt="stubs")
+    assert "abstract class CheckoutController" in controller_contract
+    assert "abstract class IOrderRepository" in controller_contract
+    assert "abstract class InventoryService" in controller_contract
+    assert "abstract class PaymentGateway" in controller_contract
+    assert "abstract class AnalyticsTracker" in controller_contract
+    # Ensure widget tree was pruned away
+    assert "CheckoutScreen" not in controller_contract
+
+    # 2. Target UI widget build method
+    widget_contract = ontoprune.translate(fixture_path, "build", fmt="stubs")
+    assert "abstract class _CheckoutScreenState" in widget_contract
+    assert "abstract class CheckoutController" in widget_contract
+    # Ensure backend repos were pruned away from UI build
+    assert "IOrderRepository" not in widget_contract
+    assert "PaymentGateway" not in widget_contract
