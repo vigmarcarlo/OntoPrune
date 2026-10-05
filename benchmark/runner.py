@@ -55,12 +55,7 @@ def evaluate_pipeline(
     runs: int = 3,
 ) -> AggregatedMetrics:
     """Runs N evaluations and aggregates by median."""
-    full_prompt = (
-        f"{context_text}\n\n"
-        f"--- SÍMBOLO OBJETIVO ---\n"
-        f"{target_symbol}\n\n"
-        f"{task_prompt}"
-    )
+    full_prompt = f"{context_text}\n\n--- SÍMBOLO OBJETIVO ---\n{target_symbol}\n\n{task_prompt}"
 
     results: list[StreamResult] = []
     hallucination_counts: list[int] = []
@@ -267,14 +262,16 @@ def format_report(results: dict[str, Any]) -> str:
     # Additional section if format ablation was performed
     format_results = results.get("format_results")
     if format_results:
-        report_lines.extend([
-            "",
-            "FORMAT ABLATION COMPARISON (H4):",
-            "-" * 80,
-            f"{'FORMAT':<12} {'INPUT TOKENS':<15} {'TTFT (ms)':<12} {'TOTAL TIME':<14} {'HALLUCINATIONS'}",
-            "-" * 80,
-            f"{'NAIVE':<12} {naive.input_tokens:<15} {naive.ttft_ms:<12.0f} {naive.total_time_ms:<14.0f} {naive.hallucinations}",
-        ])
+        report_lines.extend(
+            [
+                "",
+                "FORMAT ABLATION COMPARISON (H4):",
+                "-" * 80,
+                f"{'FORMAT':<12} {'INPUT TOKENS':<15} {'TTFT (ms)':<12} {'TOTAL TIME':<14} {'HALLUCINATIONS'}",
+                "-" * 80,
+                f"{'NAIVE':<12} {naive.input_tokens:<15} {naive.ttft_ms:<12.0f} {naive.total_time_ms:<14.0f} {naive.hallucinations}",
+            ]
+        )
         for fmt_name, fmt_m in format_results.items():
             report_lines.append(
                 f"{fmt_name.upper():<12} {fmt_m.input_tokens:<15} {fmt_m.ttft_ms:<12.0f} {fmt_m.total_time_ms:<14.0f} {fmt_m.hallucinations}"

@@ -61,10 +61,9 @@ def render_turtle(graph: rdflib.Graph, target_uri: URIRef) -> str:
     return graph.serialize(format="turtle")
 
 
-def render_stubs(graph: rdflib.Graph, target_uri: URIRef) -> str:
+def _render_stubs_py(graph: rdflib.Graph, target_uri: URIRef) -> str:
     """Render Python stubs contract for target and its dependencies."""
     target_info = _extract_function_info(graph, target_uri)
-
     callee_uris = sorted(graph.objects(target_uri, SOFT.invokes))
     callees_info = [_extract_function_info(graph, c) for c in callee_uris]
 
@@ -78,7 +77,6 @@ def render_stubs(graph: rdflib.Graph, target_uri: URIRef) -> str:
                 f"{p['name']}: {p['type']}" if p["type"] else p["name"]
                 for p in callee["parameters"]
             )
-            # Pure function name without class qualification for valid python def syntax
             fn_name = callee["name"].split(".")[-1]
             ret_str = f" -> {callee['returns']}" if callee["returns"] else ""
             doc_str = f'    """{callee["docstring"]}"""\n' if callee["docstring"] else ""
@@ -103,6 +101,126 @@ def render_stubs(graph: rdflib.Graph, target_uri: URIRef) -> str:
         lines.append(f"{cls_prefix}def {fn_name}({args_str}){ret_str}:\n{doc_str}    ...")
 
     return "\n".join(lines)
+
+
+def _render_stubs_dart(graph: rdflib.Graph, target_uri: URIRef) -> str:
+    """Render Dart / Flutter abstract class contract."""
+    target_info = _extract_function_info(graph, target_uri)
+    callee_uris = sorted(graph.objects(target_uri, SOFT.invokes))
+    callees_info = [_extract_function_info(graph, c) for c in callee_uris]
+
+    lines: list[str] = ["// === OntoPrune Contract: Dart Available APIs ===", ""]
+
+    if callees_info:
+        lines.append("// --- Dependencies / Available Invocations ---")
+        by_class: dict[str, list[dict[str, Any]]] = {}
+        for c in callees_info:
+            cls = c["class"] or "GlobalScope"
+            by_class.setdefault(cls, []).append(c)
+
+        for cls, methods in by_class.items():
+            lines.append(f"abstract class {cls} {{")
+            for m in methods:
+                args = ", ".join(f"{p['type'] or 'dynamic'} {p['name']}" for p in m["parameters"])
+                lines.append(f"  {m['returns']} {m['name']}({args});")
+            lines.append("}")
+        lines.append("")
+
+    lines.append("// --- Target Function Under Scope ---")
+    target_cls = target_info["class"] or "GlobalScope"
+    t_args = ", ".join(f"{p['type'] or 'dynamic'} {p['name']}" for p in target_info["parameters"])
+    lines.append(f"abstract class {target_cls} {{")
+    lines.append(f"  {target_info['returns']} {target_info['name']}({t_args});")
+    lines.append("}")
+
+    return "\n".join(lines)
+
+
+def _render_stubs_java(graph: rdflib.Graph, target_uri: URIRef) -> str:
+    """Render Java interface stubs contract."""
+    target_info = _extract_function_info(graph, target_uri)
+    callee_uris = sorted(graph.objects(target_uri, SOFT.invokes))
+    callees_info = [_extract_function_info(graph, c) for c in callee_uris]
+
+    lines: list[str] = ["// === OntoPrune Contract: Java Available APIs ===", ""]
+
+    if callees_info:
+        lines.append("// --- Dependencies / Available Invocations ---")
+        by_class: dict[str, list[dict[str, Any]]] = {}
+        for c in callees_info:
+            cls = c["class"] or "GlobalScope"
+            by_class.setdefault(cls, []).append(c)
+
+        for cls, methods in by_class.items():
+            lines.append(f"public interface {cls} {{")
+            for m in methods:
+                args = ", ".join(f"{p['type'] or 'Object'} {p['name']}" for p in m["parameters"])
+                lines.append(f"    {m['returns']} {m['name']}({args});")
+            lines.append("}")
+        lines.append("")
+
+    lines.append("// --- Target Function Under Scope ---")
+    target_cls = target_info["class"] or "GlobalScope"
+    t_args = ", ".join(f"{p['type'] or 'Object'} {p['name']}" for p in target_info["parameters"])
+    lines.append(f"public interface {target_cls} {{")
+    lines.append(f"    {target_info['returns']} {target_info['name']}({t_args});")
+    lines.append("}")
+
+    return "\n".join(lines)
+
+
+def _render_stubs_ts(graph: rdflib.Graph, target_uri: URIRef) -> str:
+    """Render TypeScript interface stubs contract."""
+    target_info = _extract_function_info(graph, target_uri)
+    callee_uris = sorted(graph.objects(target_uri, SOFT.invokes))
+    callees_info = [_extract_function_info(graph, c) for c in callee_uris]
+
+    lines: list[str] = ["// === OntoPrune Contract: TypeScript Available APIs ===", ""]
+
+    if callees_info:
+        lines.append("// --- Dependencies / Available Invocations ---")
+        by_class: dict[str, list[dict[str, Any]]] = {}
+        for c in callees_info:
+            cls = c["class"] or "GlobalScope"
+            by_class.setdefault(cls, []).append(c)
+
+        for cls, methods in by_class.items():
+            lines.append(f"export interface {cls} {{")
+            for m in methods:
+                args = ", ".join(f"{p['name']}: {p['type'] or 'any'}" for p in m["parameters"])
+                lines.append(f"    {m['name']}({args}): {m['returns']};")
+            lines.append("}")
+        lines.append("")
+
+    lines.append("// --- Target Function Under Scope ---")
+    target_cls = target_info["class"] or "GlobalScope"
+    t_args = ", ".join(f"{p['name']}: {p['type'] or 'any'}" for p in target_info["parameters"])
+    lines.append(f"export interface {target_cls} {{")
+    lines.append(f"    {target_info['name']}({t_args}): {target_info['returns']};")
+    lines.append("}")
+
+    return "\n".join(lines)
+
+
+def render_stubs(graph: rdflib.Graph, target_uri: URIRef) -> str:
+    """Render stubs contract, auto-detecting language dialect from RDF graph."""
+    lang = None
+    # Check target function language or module language
+    for val in graph.objects(target_uri, SOFT.language):
+        lang = str(val).lower()
+        break
+    if not lang:
+        for val in graph.objects(predicate=SOFT.language):
+            lang = str(val).lower()
+            break
+
+    if lang == "dart":
+        return _render_stubs_dart(graph, target_uri)
+    elif lang == "java":
+        return _render_stubs_java(graph, target_uri)
+    elif lang in ("typescript", "ts", "javascript", "js", "tsx"):
+        return _render_stubs_ts(graph, target_uri)
+    return _render_stubs_py(graph, target_uri)
 
 
 def render_json(graph: rdflib.Graph, target_uri: URIRef) -> str:

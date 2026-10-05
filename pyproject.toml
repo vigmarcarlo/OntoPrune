@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ontoprune"
-version = "0.1.0"
+version = "0.2.0a1"
 description = "Neuro-Symbolic Context Pruning Middleware for Local SLMs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Carlos Vigmar", email = "vigmarcarlo@gmail.com" }
+    { name = "Vigmar", email = "vigmarcarlo@gmail.com" }
 ]
 dependencies = [
     "mcp>=1.0.0",
@@ -30,6 +30,12 @@ dev = [
 ]
 benchmark = [
     "requests>=2.31.0",
+]
+languages = [
+    "tree-sitter>=0.22.0",
+    "tree-sitter-dart>=0.1.0",
+    "tree-sitter-java>=0.23.0",
+    "tree-sitter-typescript>=0.23.0",
 ]
 
 [project.scripts]

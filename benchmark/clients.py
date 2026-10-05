@@ -66,11 +66,7 @@ class GeminiClient(LLMClient):
             f"?alt=sse&key={self.api_key}"
         )
         payload = {
-            "contents": [
-                {
-                    "parts": [{"text": prompt}]
-                }
-            ],
+            "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": temperature,
                 "seed": seed,
@@ -138,7 +134,9 @@ class OllamaClient(LLMClient):
     Streaming HTTP client for local Ollama instances.
     """
 
-    def __init__(self, host: str = "http://localhost:11434", model: str = "qwen2.5-coder:3b") -> None:
+    def __init__(
+        self, host: str = "http://localhost:11434", model: str = "qwen2.5-coder:3b"
+    ) -> None:
         self.host = host.rstrip("/")
         self.model = model
 

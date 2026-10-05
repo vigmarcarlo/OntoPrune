@@ -38,7 +38,9 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         help="LLM model identifier (defaults: gemini-2.5-flash for gemini, qwen2.5-coder:3b for ollama)",
     )
-    parser.add_argument("--host", default="http://localhost:11434", type=str, help="Ollama host URL")
+    parser.add_argument(
+        "--host", default="http://localhost:11434", type=str, help="Ollama host URL"
+    )
     parser.add_argument(
         "--format",
         "-f",

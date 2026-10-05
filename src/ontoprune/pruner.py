@@ -22,6 +22,7 @@ _SPARQL_CONSTRUCT_NO_BODY = prepareQuery(
     CONSTRUCT {
         ?target a soft:Function ;
                 rdfs:label ?targetName ;
+                soft:language ?lang ;
                 soft:belongsToClass ?className ;
                 soft:returnsType ?returnType ;
                 rdfs:comment ?docstring ;
@@ -43,6 +44,7 @@ _SPARQL_CONSTRUCT_NO_BODY = prepareQuery(
         ?target a soft:Function ;
                 rdfs:label ?targetName .
 
+        OPTIONAL { ?target soft:language ?lang . }
         OPTIONAL { ?target soft:belongsToClass ?className . }
         OPTIONAL { ?target soft:returnsType ?returnType . }
         OPTIONAL { ?target rdfs:comment ?docstring . }
@@ -74,6 +76,7 @@ _SPARQL_CONSTRUCT_WITH_BODY = prepareQuery(
     CONSTRUCT {
         ?target a soft:Function ;
                 rdfs:label ?targetName ;
+                soft:language ?lang ;
                 soft:belongsToClass ?className ;
                 soft:returnsType ?returnType ;
                 rdfs:comment ?docstring ;
@@ -96,6 +99,7 @@ _SPARQL_CONSTRUCT_WITH_BODY = prepareQuery(
         ?target a soft:Function ;
                 rdfs:label ?targetName .
 
+        OPTIONAL { ?target soft:language ?lang . }
         OPTIONAL { ?target soft:belongsToClass ?className . }
         OPTIONAL { ?target soft:returnsType ?returnType . }
         OPTIONAL { ?target rdfs:comment ?docstring . }

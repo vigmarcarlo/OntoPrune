@@ -97,7 +97,9 @@ def verify_response(
         "is_valid": len(violations) == 0,
         "hallucination_count": len(violations),
         "invalid_calls": violations,
-        "summary": "100% Valid Contract Compliance" if not violations else f"{len(violations)} invalid calls detected",
+        "summary": "100% Valid Contract Compliance"
+        if not violations
+        else f"{len(violations)} invalid calls detected",
     }
 
 

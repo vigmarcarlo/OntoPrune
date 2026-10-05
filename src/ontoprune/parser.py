@@ -435,9 +435,36 @@ def parse_file(
     module_name: str | None = None,
     include_bodies: bool = False,
 ) -> rdflib.Graph:
-    """Read a Python file and parse it into an RDF graph."""
+    """Read a source file (Python, Dart, Java, TypeScript) and parse it into an RDF graph."""
     path = Path(file_path)
     if module_name is None:
         module_name = path.stem
     source_code = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+
+    if suffix == ".dart":
+        from ontoprune.treesitter_parser import DartParser
+
+        return DartParser().parse(
+            source_code, module_name=module_name, include_bodies=include_bodies
+        )
+    elif suffix == ".java":
+        from ontoprune.treesitter_parser import JavaParser
+
+        return JavaParser().parse(
+            source_code, module_name=module_name, include_bodies=include_bodies
+        )
+    elif suffix in (".ts", ".js"):
+        from ontoprune.treesitter_parser import TypeScriptParser
+
+        return TypeScriptParser(is_tsx=False).parse(
+            source_code, module_name=module_name, include_bodies=include_bodies
+        )
+    elif suffix in (".tsx", ".jsx"):
+        from ontoprune.treesitter_parser import TypeScriptParser
+
+        return TypeScriptParser(is_tsx=True).parse(
+            source_code, module_name=module_name, include_bodies=include_bodies
+        )
+
     return parse_source(source_code, module_name=module_name, include_bodies=include_bodies)

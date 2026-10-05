@@ -23,13 +23,28 @@ Evaluación real con streaming sobre [sample_service.py](fixtures/sample_service
 ## Instalación
 
 ```bash
-pip install -e .
+# Instalación estándar (Python nativo):
+pip install ontoprune
 
-# Con dependencias para benchmarking:
-pip install -e ".[dev,benchmark]"
+# Con soporte multi-lenguaje (Flutter/Dart, Java, TypeScript vía Tree-sitter):
+pip install "ontoprune[languages]"
+
+# Para desarrollo y benchmarks:
+pip install "ontoprune[dev,benchmark,languages]"
 ```
 
 ---
+
+## Soporte Multi-Lenguaje Universal
+
+OntoPrune utiliza una representación ontológica interna (`software.ttl`) agnóstica del lenguaje. Detecta automáticamente la extensión del archivo y genera contratos tipados nativos:
+
+| Lenguaje | Extensión | Motor AST | Formato de Salida |
+|---|---|---|---|
+| **Python** | `.py` | Python `ast` nativo | `def nombre(args) -> Ret: ...` |
+| **Flutter / Dart** | `.dart` | `tree-sitter-dart` | `abstract class ... { Ret metodo(); }` |
+| **Java** | `.java` | `tree-sitter-java` | `public interface ... { Ret metodo(); }` |
+| **TypeScript / JS** | `.ts`, `.tsx`, `.js` | `tree-sitter-typescript` | `export interface ... { metodo(): Ret; }` |
 
 ## Modos de Uso
 

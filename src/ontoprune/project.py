@@ -23,7 +23,9 @@ class ImportFinder(ast.NodeVisitor):
         self.current_file = current_file
         self.resolver = resolver
         self.resolved_files: set[Path] = set()
-        self.imported_symbols: dict[str, tuple[Path, str]] = {}  # local_alias -> (source_file, original_name)
+        self.imported_symbols: dict[
+            str, tuple[Path, str]
+        ] = {}  # local_alias -> (source_file, original_name)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:

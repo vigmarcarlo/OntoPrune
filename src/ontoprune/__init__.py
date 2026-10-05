@@ -12,7 +12,7 @@ from ontoprune.project import parse_project_file
 from ontoprune.pruner import find_symbol_uri, prune_subgraph
 from ontoprune.render import RENDERERS, render_contract
 
-__version__ = "0.2.0-alpha"
+__version__ = "0.2.0a1"
 __all__ = [
     "RENDERERS",
     "check",
@@ -52,7 +52,7 @@ def translate(
     """
     path_obj = Path(source_or_file) if isinstance(source_or_file, (str, Path)) else None
     if path_obj and path_obj.exists() and path_obj.is_file():
-        if multi_module:
+        if multi_module and path_obj.suffix.lower() == ".py":
             graph = parse_project_file(path_obj, project_root=project_root)
         else:
             graph = parse_file(path_obj)
