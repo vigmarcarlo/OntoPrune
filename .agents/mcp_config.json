@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "ontoprune": {
+      "command": "/home/vigmarcarlo/Proyectos/OntoPrune/.venv/bin/ontoprune-mcp"
+    }
+  }
+}

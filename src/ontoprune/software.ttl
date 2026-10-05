@@ -1,0 +1,38 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix soft: <https://w3id.org/ontoprune/software#> .
+
+# Ontology Declaration
+<https://w3id.org/ontoprune/software> a owl:Ontology ;
+    rdfs:label "OntoPrune Software Ontology" ;
+    rdfs:comment "Minimal declarative vocabulary for modeling software contracts and dependency graphs." ;
+    owl:versionInfo "0.1.0" .
+
+# Clases Principales
+soft:Module     a owl:Class ; rdfs:label "Module" .
+soft:Class      a owl:Class ; rdfs:label "Class" .
+soft:Function   a owl:Class ; rdfs:label "Function or Method" .
+soft:Parameter  a owl:Class ; rdfs:label "Parameter" .
+soft:Attribute  a owl:Class ; rdfs:label "Attribute" .
+soft:External   a owl:Class ; rdfs:subClassOf soft:Function ; rdfs:label "External Function or Method" .
+
+# Propiedades Estructurales
+soft:containsClass    a owl:ObjectProperty ; rdfs:domain soft:Module ;   rdfs:range soft:Class ;    rdfs:label "containsClass" .
+soft:containsFunction a owl:ObjectProperty ; rdfs:domain soft:Module ;   rdfs:range soft:Function ; rdfs:label "containsFunction" .
+soft:hasMethod        a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:range soft:Function ; rdfs:label "hasMethod" .
+soft:hasAttribute     a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:range soft:Attribute ; rdfs:label "hasAttribute" .
+soft:inheritsFrom     a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:range soft:Class ;    rdfs:label "inheritsFrom" .
+soft:hasParameter     a owl:ObjectProperty ; rdfs:domain soft:Function ; rdfs:range soft:Parameter ; rdfs:label "hasParameter" .
+
+# Dependencias e Invocaciones
+soft:invokes          a owl:ObjectProperty ; rdfs:domain soft:Function ; rdfs:range soft:Function ; rdfs:label "invokes" .
+
+# Propiedades Literales
+soft:belongsToClass   a owl:DatatypeProperty ; rdfs:domain soft:Function ; rdfs:range xsd:string ; rdfs:label "belongsToClass" .
+soft:hasType          a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "hasType" .
+soft:returnsType      a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "returnsType" .
+soft:decoratedWith    a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "decoratedWith" .
+soft:hasDefault       a owl:DatatypeProperty ; rdfs:domain soft:Parameter ; rdfs:range xsd:string ; rdfs:label "hasDefault" .
+soft:sourceBody       a owl:DatatypeProperty ; rdfs:domain soft:Function ; rdfs:range xsd:string ; rdfs:label "sourceBody" .
