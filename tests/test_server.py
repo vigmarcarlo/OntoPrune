@@ -14,6 +14,9 @@ def test_mcp_prune_context_tool() -> None:
     assert "procesar_orden" in res
     assert "emitir_factura" in res
     assert "reservar_stock" in res
+    assert "class OrderService:" in res
+    assert "class Invoice:" in res
+    assert "class Order:" in res
     assert "Error" not in res
 
 

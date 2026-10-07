@@ -38,3 +38,8 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+
+# Node & Extensions
+node_modules/
+out/
+*.vsix

@@ -99,3 +99,30 @@ def test_sample_service_fixture_parsing() -> None:
     assert REPO["func_PaymentGateway.cobrar"] in invoked
     assert REPO["func_BillingService.emitir_factura"] in invoked
     assert REPO["func_OrderRepository.update_status"] in invoked
+
+
+def test_dataclass_and_domain_type_parsing() -> None:
+    code = """
+from dataclasses import dataclass
+
+@dataclass
+class Customer:
+    id: str
+    email: str
+
+class CustomerService:
+    def get_customer(self, customer_id: str) -> Customer:
+        pass
+"""
+    g = parse_source(code, "test_dataclass")
+    cust_uri = REPO["class_Customer"]
+    assert (cust_uri, RDF.type, SOFT.Class) in g
+    assert (cust_uri, SOFT.decoratedWith, Literal("dataclass")) in g
+
+    attr_id = REPO["attr_Customer_id"]
+    assert (cust_uri, SOFT.hasAttribute, attr_id) in g
+    assert (attr_id, SOFT.hasType, Literal("str")) in g
+
+    func_uri = REPO["func_CustomerService.get_customer"]
+    assert (func_uri, SOFT.usesType, cust_uri) in g
+

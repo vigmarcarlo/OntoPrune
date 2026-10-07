@@ -25,6 +25,7 @@ soft:hasMethod        a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:ra
 soft:hasAttribute     a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:range soft:Attribute ; rdfs:label "hasAttribute" .
 soft:inheritsFrom     a owl:ObjectProperty ; rdfs:domain soft:Class ;    rdfs:range soft:Class ;    rdfs:label "inheritsFrom" .
 soft:hasParameter     a owl:ObjectProperty ; rdfs:domain soft:Function ; rdfs:range soft:Parameter ; rdfs:label "hasParameter" .
+soft:usesType         a owl:ObjectProperty ; rdfs:domain soft:Function ; rdfs:range soft:Class ; rdfs:label "usesType" .
 
 # Dependencias e Invocaciones
 soft:invokes          a owl:ObjectProperty ; rdfs:domain soft:Function ; rdfs:range soft:Function ; rdfs:label "invokes" .

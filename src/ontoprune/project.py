@@ -69,6 +69,7 @@ class ProjectGraph:
         self,
         entry_file: str | Path,
         max_depth: int = 3,
+        include_bodies: bool = False,
     ) -> rdflib.Graph:
         """
         Recursively parses entry_file and its imported internal dependencies up to max_depth.
@@ -144,7 +145,7 @@ class ProjectGraph:
                 source_code=src,
                 symbols=collector,
                 module_name=mod_name,
-                include_bodies=False,
+                include_bodies=include_bodies,
             )
             visitor.visit(tree)
 
@@ -345,7 +346,8 @@ class ProjectGraph:
 def parse_project_file(
     file_path: str | Path,
     project_root: str | Path | None = None,
+    include_bodies: bool = False,
 ) -> rdflib.Graph:
     """Convenience function to parse a file and its project dependencies into an RDF graph."""
     project = ProjectGraph(project_root=project_root)
-    return project.parse_project_for_file(file_path)
+    return project.parse_project_for_file(file_path, include_bodies=include_bodies)

@@ -28,3 +28,26 @@ def test_cli_check_stdout(tmp_path, capsys) -> None:
     assert ret == 0
     captured = capsys.readouterr()
     assert "VALID" in captured.out
+
+
+def test_cli_benchmark_mock(tmp_path, capsys) -> None:
+    out_dir = str(tmp_path / "bench_out")
+    ret = main(
+        [
+            "benchmark",
+            "--backend",
+            "mock",
+            "--archetype",
+            "1",
+            "--repeats",
+            "1",
+            "--output-dir",
+            out_dir,
+            "--analyze",
+        ]
+    )
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "PROTOCOLO DE VALIDACIÓN" in captured.out
+    assert "INFORME DE VALIDACIÓN" in captured.out
+

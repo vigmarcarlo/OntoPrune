@@ -1,0 +1,143 @@
+{
+  "name": "ontoprune-vscode",
+  "displayName": "OntoPrune AI - Local Context Pruner",
+  "description": "Neuro-Symbolic Context Pruning for Local SLMs and Coding LLMs",
+  "version": "0.1.0",
+  "publisher": "ontoprune",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "AI",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ontoprune-sidebar",
+          "title": "OntoPrune AI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ontoprune-sidebar": [
+        {
+          "type": "webview",
+          "id": "ontoprune.sidebarView",
+          "name": "OntoPrune Assistant"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ontoprune.pruneCurrentSymbol",
+        "title": "OntoPrune: Prune Context for Method under Cursor",
+        "category": "OntoPrune"
+      },
+      {
+        "command": "ontoprune.generateUnitTest",
+        "title": "OntoPrune: Generate Unit Test with Ollama",
+        "category": "OntoPrune"
+      },
+      {
+        "command": "ontoprune.refactorMethod",
+        "title": "OntoPrune: Refactor Method",
+        "category": "OntoPrune"
+      },
+      {
+        "command": "ontoprune.setGeminiKey",
+        "title": "OntoPrune: Configurar API Key de Google Gemini",
+        "category": "OntoPrune"
+      },
+      {
+        "command": "ontoprune.setOpenAiKey",
+        "title": "OntoPrune: Configurar API Key de OpenAI",
+        "category": "OntoPrune"
+      },
+      {
+        "command": "ontoprune.setAnthropicKey",
+        "title": "OntoPrune: Configurar API Key de Anthropic",
+        "category": "OntoPrune"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ontoprune.pruneCurrentSymbol",
+          "group": "OntoPrune@1"
+        },
+        {
+          "command": "ontoprune.refactorMethod",
+          "group": "OntoPrune@2"
+        },
+        {
+          "command": "ontoprune.generateUnitTest",
+          "group": "OntoPrune@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "OntoPrune",
+      "properties": {
+        "ontoprune.defaultProvider": {
+          "type": "string",
+          "enum": ["ollama", "gemini", "openai", "anthropic"],
+          "default": "ollama",
+          "description": "Proveedor de IA predeterminado (Ollama local, Google Gemini, OpenAI o Anthropic)"
+        },
+        "ontoprune.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key de Google Gemini (Google AI Studio)"
+        },
+        "ontoprune.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key de OpenAI"
+        },
+        "ontoprune.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key de Anthropic Claude"
+        },
+        "ontoprune.ollamaHost": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama host API URL"
+        },
+        "ontoprune.ollamaModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Default Ollama model for code generation"
+        },
+        "ontoprune.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python executable with ontoprune installed"
+        },
+        "ontoprune.numThreads": {
+          "type": "number",
+          "default": 4,
+          "description": "Number of CPU threads Ollama uses for inference (recommended: 4 for smooth multitasking on 6-core CPUs)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.15.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}

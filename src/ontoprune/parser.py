@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
 from urllib.parse import quote
 
 import rdflib
@@ -74,6 +75,7 @@ class SymbolCollector(ast.NodeVisitor):
         self.methods: dict[str, set[str]] = {}  # class_name -> set of method_names
         self.inheritance: dict[str, list[str]] = {}  # class_name -> list of base class names
         self.attr_types: dict[str, dict[str, str]] = {}  # class_name -> {attr_name: type_name}
+        self.class_attributes: dict[str, list[tuple[str, str | None, str | None]]] = {}
         self.current_class: str | None = None
         self.all_class_methods: dict[
             str, dict[str, str]
@@ -85,12 +87,40 @@ class SymbolCollector(ast.NodeVisitor):
         self.methods[cls_name] = set()
         self.inheritance[cls_name] = []
         self.attr_types[cls_name] = {}
+        self.class_attributes[cls_name] = []
 
         for base in node.bases:
             if isinstance(base, ast.Name):
                 self.inheritance[cls_name].append(base.id)
             elif isinstance(base, ast.Subscript) and isinstance(base.value, ast.Name):
                 self.inheritance[cls_name].append(base.value.id)
+
+        # Collect class-level fields / attributes
+        for stmt in node.body:
+            if isinstance(stmt, ast.AnnAssign):
+                if isinstance(stmt.target, ast.Name):
+                    attr_name = stmt.target.id
+                    try:
+                        type_str = ast.unparse(stmt.annotation)
+                    except Exception:
+                        type_str = None
+                    default_str = None
+                    if stmt.value:
+                        try:
+                            default_str = ast.unparse(stmt.value)
+                        except Exception:
+                            pass
+                    self.class_attributes[cls_name].append((attr_name, type_str, default_str))
+            elif isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and not target.id.startswith("__"):
+                        attr_name = target.id
+                        default_str = None
+                        try:
+                            default_str = ast.unparse(stmt.value)
+                        except Exception:
+                            pass
+                        self.class_attributes[cls_name].append((attr_name, None, default_str))
 
         prev_class = self.current_class
         self.current_class = cls_name
@@ -223,9 +253,32 @@ class OntoVisitor(ast.NodeVisitor):
         self.graph.add((cls_uri, RDFS.label, Literal(cls_name)))
         self.graph.add((self.module_uri, SOFT.containsClass, cls_uri))
 
+        # Class decorators (e.g. @dataclass)
+        for dec in node.decorator_list:
+            try:
+                dec_str = ast.unparse(dec)
+                self.graph.add((cls_uri, SOFT.decoratedWith, Literal(dec_str)))
+            except Exception:
+                pass
+
         docstring = ast.get_docstring(node)
         if docstring:
             self.graph.add((cls_uri, RDFS.comment, Literal(docstring)))
+
+        # Add class-level attributes / fields
+        attrs = self.symbols.class_attributes.get(cls_name, [])
+        for attr_name, attr_type, attr_default in attrs:
+            attr_uri = REPO[f"attr_{sanitize_id(cls_name)}_{sanitize_id(attr_name)}"]
+            self.graph.add((cls_uri, SOFT.hasAttribute, attr_uri))
+            self.graph.add((attr_uri, RDF.type, SOFT.Attribute))
+            self.graph.add((attr_uri, RDFS.label, Literal(attr_name)))
+            if attr_type:
+                self.graph.add((attr_uri, SOFT.hasType, Literal(attr_type)))
+                for word in re.findall(r"\b[A-Za-z0-9_]+\b", attr_type):
+                    if word in self.symbols.classes and word != cls_name:
+                        self.graph.add((cls_uri, SOFT.usesType, REPO[f"class_{sanitize_id(word)}"]))
+            if attr_default:
+                self.graph.add((attr_uri, SOFT.hasDefault, Literal(attr_default)))
 
         for base in node.bases:
             base_name = None
@@ -335,6 +388,27 @@ class OntoVisitor(ast.NodeVisitor):
                     self.graph.add((param_uri, SOFT.hasDefault, Literal(default_str)))
                 except Exception:
                     pass
+
+        # Collect referenced domain class types from returns and parameters
+        referenced_types: set[str] = set()
+        if node.returns:
+            for n in ast.walk(node.returns):
+                if isinstance(n, ast.Name) and n.id in self.symbols.classes and n.id != cls_name:
+                    referenced_types.add(n.id)
+
+        for arg in node.args.args + node.args.kwonlyargs:
+            if arg.annotation:
+                for n in ast.walk(arg.annotation):
+                    if isinstance(n, ast.Name) and n.id in self.symbols.classes and n.id != cls_name:
+                        referenced_types.add(n.id)
+
+        if self.include_bodies:
+            for subnode in ast.walk(node):
+                if isinstance(subnode, ast.Name) and subnode.id in self.symbols.classes and subnode.id != cls_name:
+                    referenced_types.add(subnode.id)
+
+        for ref_cls in referenced_types:
+            self.graph.add((func_uri, SOFT.usesType, REPO[f"class_{sanitize_id(ref_cls)}"]))
 
         prev_func_uri = self.current_func_uri
         prev_func_name = self.current_func_name

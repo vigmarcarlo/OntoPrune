@@ -12,7 +12,7 @@ from ontoprune.project import parse_project_file
 from ontoprune.pruner import find_symbol_uri, prune_subgraph
 from ontoprune.render import RENDERERS, render_contract
 
-__version__ = "0.2.0a1"
+__version__ = "0.3.0"
 __all__ = [
     "RENDERERS",
     "check",
@@ -39,9 +39,8 @@ def translate(
     Automatically resolves multi-module imports if source_or_file is a file path.
 
     Args:
-        source_or_file: Path to Python file or Python source code string.
-        target: Target function or method identifier (e.g. 'procesar_orden'
-                or 'OrderService.procesar_orden').
+        source_or_file: Path to source file or source code string.
+        target: Target function or method identifier.
         fmt: Output format ('stubs', 'turtle', 'json', 'nl').
         include_body: Whether to include the target function's source code body.
         multi_module: Whether to recursively resolve project imports (default: True).
@@ -52,10 +51,11 @@ def translate(
     """
     path_obj = Path(source_or_file) if isinstance(source_or_file, (str, Path)) else None
     if path_obj and path_obj.exists() and path_obj.is_file():
-        if multi_module and path_obj.suffix.lower() == ".py":
-            graph = parse_project_file(path_obj, project_root=project_root)
+        supported_multi = {".py", ".dart", ".java", ".ts", ".tsx"}
+        if multi_module and path_obj.suffix.lower() in supported_multi:
+            graph = parse_project_file(path_obj, project_root=project_root, include_bodies=include_body)
         else:
-            graph = parse_file(path_obj)
+            graph = parse_file(path_obj, include_bodies=include_body)
     else:
         graph = parse_source(str(source_or_file))
 

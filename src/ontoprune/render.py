@@ -15,10 +15,40 @@ from collections.abc import Callable
 from typing import Any
 
 import rdflib
-from rdflib import RDFS, Namespace, URIRef
+from rdflib import Graph, RDF, RDFS, Namespace, URIRef
 
 SOFT = Namespace("https://w3id.org/ontoprune/software#")
 REPO = Namespace("https://w3id.org/ontoprune/repo/")
+
+
+def _extract_domain_classes(graph: rdflib.Graph) -> list[dict[str, Any]]:
+    """Extract domain data models, Enums, and dataclasses from subgraph."""
+    classes_info = []
+    for cls_uri in sorted(graph.subjects(RDF.type, SOFT.Class)):
+        cls_name = str(graph.value(cls_uri, RDFS.label) or cls_uri.split("#")[-1].split("/")[-1])
+        docstring = graph.value(cls_uri, RDFS.comment)
+        decorators = [str(d) for d in sorted(graph.objects(cls_uri, SOFT.decoratedWith))]
+
+        attrs = []
+        for attr_uri in sorted(graph.objects(cls_uri, SOFT.hasAttribute)):
+            attr_name = graph.value(attr_uri, RDFS.label)
+            attr_type = graph.value(attr_uri, SOFT.hasType)
+            attr_default = graph.value(attr_uri, SOFT.hasDefault)
+            if attr_name:
+                attrs.append({
+                    "name": str(attr_name),
+                    "type": str(attr_type) if attr_type else None,
+                    "default": str(attr_default) if attr_default else None,
+                })
+
+        if attrs or decorators:
+            classes_info.append({
+                "name": cls_name,
+                "docstring": str(docstring).strip() if docstring else None,
+                "decorators": decorators,
+                "attributes": attrs,
+            })
+    return classes_info
 
 
 def _extract_function_info(graph: rdflib.Graph, func_uri: URIRef) -> dict[str, Any]:
@@ -53,12 +83,17 @@ def _extract_function_info(graph: rdflib.Graph, func_uri: URIRef) -> dict[str, A
     }
 
 
-def render_turtle(graph: rdflib.Graph, target_uri: URIRef) -> str:
-    """Render canonical Turtle RDF representation."""
-    graph.bind("soft", SOFT)
-    graph.bind("repo", REPO)
-    graph.bind("rdfs", RDFS)
-    return graph.serialize(format="turtle")
+def render_turtle(graph: Graph, target_uri: URIRef) -> str:
+    """Render canonical Turtle RDF representation for functions and invocations."""
+    turtle_graph = Graph()
+    turtle_graph.bind("soft", SOFT)
+    turtle_graph.bind("repo", REPO)
+    turtle_graph.bind("rdfs", RDFS)
+    for s, p, o in graph:
+        if (s, RDF.type, SOFT.Attribute) in graph or p == SOFT.hasAttribute or p == SOFT.usesType or (s, RDF.type, SOFT.Class) in graph:
+            continue
+        turtle_graph.add((s, p, o))
+    return turtle_graph.serialize(format="turtle")
 
 
 def _render_stubs_py(graph: rdflib.Graph, target_uri: URIRef) -> str:
@@ -66,39 +101,101 @@ def _render_stubs_py(graph: rdflib.Graph, target_uri: URIRef) -> str:
     target_info = _extract_function_info(graph, target_uri)
     callee_uris = sorted(graph.objects(target_uri, SOFT.invokes))
     callees_info = [_extract_function_info(graph, c) for c in callee_uris]
+    domain_classes = _extract_domain_classes(graph)
 
     lines: list[str] = ["# === OntoPrune Contract: Available APIs ===", ""]
 
+    # 1. Domain Types & Data Models
+    # Exclude target class and dependency classes that only have methods
+    service_classes = {c["class"] for c in callees_info if c["class"]}
+    if target_info["class"]:
+        service_classes.add(target_info["class"])
+
+    data_models = [dc for dc in domain_classes if dc["name"] not in service_classes]
+    if data_models:
+        lines.append("# --- Domain Types & Data Models ---")
+        for dc in data_models:
+            for dec in dc["decorators"]:
+                lines.append(f"@{dec}")
+            lines.append(f"class {dc['name']}:")
+            if dc["docstring"]:
+                lines.append(f'    """{dc["docstring"]}"""')
+            for attr in dc["attributes"]:
+                if attr["type"]:
+                    lines.append(f"    {attr['name']}: {attr['type']}")
+                elif attr["default"]:
+                    lines.append(f"    {attr['name']} = {attr['default']}")
+                else:
+                    lines.append(f"    {attr['name']}: Any")
+            if not dc["attributes"] and not dc["docstring"]:
+                lines.append("    ...")
+            lines.append("")
+
+    # 2. Dependencies / Available Invocations
     if callees_info:
         lines.append("# --- Dependencies / Available Invocations ---")
-        for callee in callees_info:
-            cls_prefix = f"# Class: {callee['class']}\n" if callee["class"] else ""
-            args_str = ", ".join(
-                f"{p['name']}: {p['type']}" if p["type"] else p["name"]
-                for p in callee["parameters"]
-            )
-            fn_name = callee["name"].split(".")[-1]
-            ret_str = f" -> {callee['returns']}" if callee["returns"] else ""
-            doc_str = f'    """{callee["docstring"]}"""\n' if callee["docstring"] else ""
-            lines.append(f"{cls_prefix}def {fn_name}({args_str}){ret_str}:\n{doc_str}    ...")
-        lines.append("")
+        by_class: dict[str | None, list[dict[str, Any]]] = {}
+        for c in callees_info:
+            by_class.setdefault(c["class"], []).append(c)
 
+        for cls_name, methods in by_class.items():
+            if cls_name:
+                lines.append(f"class {cls_name}:")
+                for m in methods:
+                    args_list = ["self"] + [
+                        f"{p['name']}: {p['type']}" if p["type"] else p["name"]
+                        for p in m["parameters"]
+                    ]
+                    args_str = ", ".join(args_list)
+                    fn_name = m["name"].split(".")[-1]
+                    ret_str = f" -> {m['returns']}" if m["returns"] else ""
+                    doc_str = f'        """{m["docstring"]}"""\n' if m["docstring"] else ""
+                    lines.append(f"    def {fn_name}({args_str}){ret_str}:\n{doc_str}        ...")
+            else:
+                for m in methods:
+                    args_str = ", ".join(
+                        f"{p['name']}: {p['type']}" if p["type"] else p["name"]
+                        for p in m["parameters"]
+                    )
+                    fn_name = m["name"].split(".")[-1]
+                    ret_str = f" -> {m['returns']}" if m["returns"] else ""
+                    doc_str = f'    """{m["docstring"]}"""\n' if m["docstring"] else ""
+                    lines.append(f"def {fn_name}({args_str}){ret_str}:\n{doc_str}    ...")
+            lines.append("")
+
+    # 3. Target Function Under Scope
     lines.append("# --- Target Function Under Scope ---")
-    cls_prefix = f"# Class: {target_info['class']}\n" if target_info["class"] else ""
-    args_str = ", ".join(
-        f"{p['name']}: {p['type']}{' = ' + p['default'] if p['default'] else ''}"
-        if p["type"]
-        else p["name"]
-        for p in target_info["parameters"]
-    )
     fn_name = target_info["name"].split(".")[-1]
     ret_str = f" -> {target_info['returns']}" if target_info["returns"] else ""
     doc_str = f'    """{target_info["docstring"]}"""\n' if target_info["docstring"] else ""
 
-    if target_info["body"]:
-        lines.append(f"{cls_prefix}# Original implementation:\n{target_info['body']}")
+    if target_info["class"]:
+        cls_name = target_info["class"]
+        lines.append(f"class {cls_name}:")
+        if target_info["body"]:
+            indented_body = "\n".join("    " + line if line.strip() else "" for line in target_info["body"].splitlines())
+            lines.append(f"    # Original implementation:\n{indented_body}")
+        else:
+            args_list = ["self"] + [
+                f"{p['name']}: {p['type']}{' = ' + p['default'] if p['default'] else ''}"
+                if p["type"]
+                else p["name"]
+                for p in target_info["parameters"]
+            ]
+            args_str = ", ".join(args_list)
+            target_doc_indent = f'        """{target_info["docstring"]}"""\n' if target_info["docstring"] else ""
+            lines.append(f"    def {fn_name}({args_str}){ret_str}:\n{target_doc_indent}        ...")
     else:
-        lines.append(f"{cls_prefix}def {fn_name}({args_str}){ret_str}:\n{doc_str}    ...")
+        args_str = ", ".join(
+            f"{p['name']}: {p['type']}{' = ' + p['default'] if p['default'] else ''}"
+            if p["type"]
+            else p["name"]
+            for p in target_info["parameters"]
+        )
+        if target_info["body"]:
+            lines.append(f"# Original implementation:\n{target_info['body']}")
+        else:
+            lines.append(f"def {fn_name}({args_str}){ret_str}:\n{doc_str}    ...")
 
     return "\n".join(lines)
 

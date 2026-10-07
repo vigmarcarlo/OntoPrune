@@ -54,6 +54,38 @@ def main(argv: list[str] | None = None) -> int:
     )
     check_p.add_argument("--against", required=True, type=str, help="Contract file path")
 
+    # Subcommand: benchmark
+    bench_p = subparsers.add_parser("benchmark", help="Run empirical benchmark suite")
+    bench_p.add_argument(
+        "--backend",
+        default="mock",
+        choices=["all", "gemini", "ollama", "mock"],
+        help="Inference engine backend (default: mock)",
+    )
+    bench_p.add_argument(
+        "--archetype",
+        default="all",
+        choices=["all", "1", "2", "3"],
+        help="Archetype filter (default: all)",
+    )
+    bench_p.add_argument(
+        "--repeats",
+        default=2,
+        type=int,
+        help="Number of evaluation repetitions per scenario (default: 2)",
+    )
+    bench_p.add_argument(
+        "--analyze",
+        action="store_true",
+        help="Generate analysis and Go / No-Go report after execution",
+    )
+    bench_p.add_argument(
+        "--output-dir",
+        default=".benchmarks",
+        type=str,
+        help="Output directory (default: .benchmarks)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "translate":
@@ -92,6 +124,29 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         except Exception as err:
             sys.stderr.write(f"Error during verification: {err}\n")
+            return 1
+
+    elif args.command == "benchmark":
+        try:
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+
+            from benchmark.analyze_results import analyze_matrix
+            from benchmark.massive_evaluator import MassiveBenchmarkSuite
+
+            suite = MassiveBenchmarkSuite(output_dir=args.output_dir)
+            suite.run_suite(
+                backend=args.backend,
+                archetype=args.archetype,
+                repeats_per_scenario=args.repeats,
+            )
+            if args.analyze:
+                report = analyze_matrix(json_path=f"{args.output_dir}/results_matrix.json")
+                sys.stdout.write("\n" + report + "\n")
+            return 0
+        except Exception as err:
+            sys.stderr.write(f"Error during benchmark: {err}\n")
             return 1
 
     return 0
