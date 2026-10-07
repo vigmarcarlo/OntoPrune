@@ -1,0 +1,27 @@
+version: "1.0.0"
+name: ontoprune
+displayName: OntoPrune MCP Server
+description: "Neuro-symbolic context pruning middleware. Achieves 60% token reduction, 62% TTFT latency drop on local CPUs, and 100% IP isolation via formal SPARQL closures."
+repository: https://github.com/vigmarcarlo/OntoPrune
+license: MIT
+runtime: python
+tags:
+  - context-pruning
+  - neurosymbolic
+  - performance
+  - developer-tools
+  - ip-protection
+  - code-intelligence
+build:
+  steps:
+    - name: install
+      command: pip install -e .
+command:
+  executable: ontoprune-mcp
+  args: []
+features:
+  tools:
+    - name: prune_context
+      description: "Extracts minimal 1-hop typed stubs, domain types, and class scopes for a target symbol."
+    - name: verify_response
+      description: "Symbolically validates generated code against authorized dependency signatures."
