@@ -1,17 +1,6 @@
 {
-  "$schema": "https://glama.ai/mcp/schema/server.json",
-  "name": "ontoprune",
-  "title": "OntoPrune: Neuro-Symbolic Code Context Pruning",
-  "description": "Deterministic context pruning server for code generation. Cuts input tokens by 60% on modular architectures and eliminates proprietary IP leaks to external LLMs.",
-  "version": "0.3.0",
-  "author": "Vigmar Carlo",
-  "homepage": "https://github.com/vigmarcarlo/OntoPrune",
-  "license": "MIT",
-  "transport": "stdio",
-  "command": "ontoprune-mcp",
-  "platforms": [
-    "linux",
-    "darwin",
-    "win32"
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": [
+    "vigmarcarlo"
   ]
 }
